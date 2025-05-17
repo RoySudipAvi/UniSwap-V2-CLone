@@ -92,14 +92,15 @@ contract Pair is IPair, ERC20, ReentrancyGuard {
         _amountTokenA = (_balanceTokenA * _liquidity) / _totalsupply;
         _amountTokenB = (_balanceTokenB * _liquidity) / _totalsupply;
         _burn(address(this), _liquidity);
+        s_tokenA.safeTransfer(_to, _amountTokenA);
+        s_tokenB.safeTransfer(_to, _amountTokenB);
         _update(
             IERC20(s_tokenA).balanceOf(address(this)),
             IERC20(s_tokenB).balanceOf(address(this)),
             _reserveTokenA,
             _reserveTokenB
         );
-        s_tokenA.safeTransfer(_to, _amountTokenA);
-        s_tokenB.safeTransfer(_to, _amountTokenB);
+
         emit Burn(msg.sender, _amountTokenA, _amountTokenB, _to);
     }
 

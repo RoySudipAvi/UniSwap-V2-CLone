@@ -6,7 +6,7 @@ import {IPair} from "src/interfaces/IPair.sol";
 import {console} from "forge-std/console.sol";
 
 library Utils {
-    bytes32 public constant BYTECODE_HASH = 0xac21dd428fadb61dc76376caeac99f9bea0a60c43a5b6e91d7d0555b429e2b1b;
+    bytes32 public constant BYTECODE_HASH = 0x254d1b91310048abf995272ef8e090b933e4f52c34f5f79db7d8c350a4fd2fb0;
 
     function getPairAddress(address _factory, address _tokenA, address _tokenB)
         internal
@@ -44,6 +44,7 @@ library Utils {
         returns (uint256 _reserveTokenA, uint256 _reserveTokenB)
     {
         (address _token0,) = sortTokens(_tokenA, _tokenB);
+
         (uint256 _reserveToken0, uint256 _reserveToken1,) =
             IPair(getPairAddress(_factory, _tokenA, _tokenB)).getReserves();
 

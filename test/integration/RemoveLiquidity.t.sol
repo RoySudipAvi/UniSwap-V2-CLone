@@ -2,96 +2,58 @@
 pragma solidity 0.8.28;
 
 import {
-    Test,
+    TestSetup,
     console,
     Utils,
     Errors,
     Router,
-    IWETH,
     SafeTransferLib,
     Pair,
     IPair,
     IFactory,
     Factory,
-    WETH,
-    FactoryRouterDeployment,
     MockToken,
-    Vm,
     IERC20,
-    FixedPointMathLib,
-    AddLiquidityTest
-} from "test/integration/AddLiquidity.t.sol";
+    FixedPointMathLib
+} from "test/integration/Setup.t.sol";
 
-contract RemoveLiquidityTest is Test {
+contract RemoveLiquidityTest is TestSetup {
     using FixedPointMathLib for uint256;
 
-    uint256 private constant s_initialBalanceUser1TokenA = 1000 * (10 ** 18);
-    uint256 private constant s_initialBalanceUser2TokenA = 3000 * (10 ** 18);
-    uint256 private constant s_initialBalanceUser1TokenB = 15000 * (10 ** 18);
-    uint256 private constant s_initialBalanceUser2TokenB = 45000 * (10 ** 18);
-    Factory private s_factory;
-    Pair private s_pair;
-    Router private s_router;
-    WETH private s_wETH;
-    FactoryRouterDeployment private s_factoryRouterDeployment;
-    MockToken private s_tokenA;
-    MockToken private s_tokenB;
-    MockToken private s_tokenC;
-    Vm.Wallet private s_user1;
-    Vm.Wallet private s_user2;
-    AddLiquidityTest private s_addLiquidityTest;
-
-    event Mint(
-        address indexed _sender, uint256 indexed _amountTokenA, uint256 indexed _amountTokenB, uint256 _liquidity
-    );
-
-    event Burn(address indexed _sender, uint256 indexed _amountTokenA, uint256 indexed _amountTokenB, address _to);
-
-    event sync(uint112 indexed _reserveTokenA, uint112 indexed _reserveTokenB, uint32 indexed _lastBlockTimestamp);
-
-    function setUp() external {
-        s_factoryRouterDeployment = new FactoryRouterDeployment();
-        (s_wETH, s_factory, s_router) = s_factoryRouterDeployment.run();
-        s_tokenA = new MockToken("Token A", "TKNA", 18);
-        s_tokenB = new MockToken("Token B", "TKNB", 18);
-        s_tokenC = new MockToken("Token C", "TKNC", 18);
-        s_user1 = vm.createWallet("User 1");
-        s_user2 = vm.createWallet("User 2");
-        s_tokenA.mint(s_user1.addr, s_initialBalanceUser1TokenA);
-        s_tokenA.mint(s_user2.addr, s_initialBalanceUser2TokenA);
-        s_tokenB.mint(s_user1.addr, s_initialBalanceUser1TokenB);
-        s_tokenB.mint(s_user2.addr, s_initialBalanceUser2TokenB);
-        s_tokenC.mint(s_user1.addr, s_initialBalanceUser1TokenA);
-        s_tokenC.mint(s_user2.addr, s_initialBalanceUser2TokenA);
-        s_addLiquidityTest = new AddLiquidityTest();
-    }
-
     function callAddLiquidity(
-        address _tokenA,
-        address _tokenB,
-        uint256 _amountTokenADesiredDeposit,
-        uint256 _amountTokenBDesiredDeposit,
+        uint256 _amountTokenADesired,
+        uint256 _amountTokenBDesired,
         uint256 _amountTokenAMinDeposit,
         uint256 _amountTokenBMinDeposit,
-        uint256 _deadlineDeposit,
+        uint256 _deadline,
         address _to
     ) public returns (uint256 _amountTokenA, uint256 _amountTokenB, uint256 _liquidity) {
-        vm.startPrank(_to);
+        (_amountTokenADesired, _amountTokenBDesired, _amountTokenAMinDeposit, _amountTokenBMinDeposit, _deadline) =
+        addLiquiditySetUp(
+            _amountTokenADesired, _amountTokenBDesired, _amountTokenAMinDeposit, _amountTokenBMinDeposit, _deadline, _to
+        );
+        vm.startPrank(s_user1.addr);
         (_amountTokenA, _amountTokenB, _liquidity) = s_router.addLiquidity(
-            address(_tokenA),
-            address(_tokenB),
-            _amountTokenADesiredDeposit,
-            _amountTokenBDesiredDeposit,
+            s_tokenA,
+            s_tokenB,
+            _amountTokenADesired,
+            _amountTokenBDesired,
             _amountTokenAMinDeposit,
             _amountTokenBMinDeposit,
             _to,
-            _deadlineDeposit
+            _deadline
         );
+
         vm.stopPrank();
     }
 
     function liquidityLimitCalculation(uint256 _liquidityBurn, uint256 _liquidity) public returns (uint256) {
-        _liquidityBurn = bound(_liquidityBurn, 1 * (10 ** 18), _liquidity);
+        (uint256 _minAmountA, uint256 _minAmountB) = getUSDToMinTokenPrice(
+            MINIMUM_LIQUIDITY_AMOUNT, s_tokenA, s_tokenB, MockToken(s_tokenA).decimals(), MockToken(s_tokenB).decimals()
+        );
+        uint256 _minLiquidity = (_minAmountA * _minAmountB).sqrt() - 1000;
+        console.log("minLiqu: ", _minLiquidity);
+        _liquidityBurn = bound(_liquidityBurn, _minLiquidity, _liquidity);
         return _liquidityBurn;
     }
 
@@ -105,58 +67,37 @@ contract RemoveLiquidityTest is Test {
     ) public returns (uint256, uint256) {
         uint256 _totalsupply = IERC20(_pairAddress).totalSupply();
         uint256 _amountTokenAWithdrawMax = (_amountTokenA * _liquidityBurn) / _totalsupply;
-
-        _amountTokenAMinWithdraw = bound(_amountTokenAMinWithdraw, 1 * (10 ** 13), _amountTokenAWithdrawMax);
+        uint256 _amountTokenBWithdrawMax = (_amountTokenB * _liquidityBurn) / _totalsupply;
+        _amountTokenAMinWithdraw =
+            bound(_amountTokenAMinWithdraw, (_amountTokenAWithdrawMax * 95) / 100, _amountTokenAWithdrawMax);
 
         _amountTokenBMinWithdraw =
-            bound(_amountTokenBMinWithdraw, 1 * (10 ** 13), (_amountTokenAMinWithdraw * _amountTokenB) / _amountTokenA);
+            bound(_amountTokenBMinWithdraw, (_amountTokenBWithdrawMax * 95) / 100, _amountTokenBWithdrawMax);
 
         return (_amountTokenAMinWithdraw, _amountTokenBMinWithdraw);
     }
 
-    function deadlineLimitCalculation(uint256 _deadlineWithdraw) public returns (uint256) {
-        _deadlineWithdraw = bound(_deadlineWithdraw, 5, 3600);
-        _deadlineWithdraw = block.timestamp + _deadlineWithdraw;
-        return _deadlineWithdraw;
-    }
-
-    function testRemoveLiquidityTransferAmounts(
-        uint256 _amountTokenADesiredDeposit,
-        uint256 _amountTokenBDesiredDeposit,
+    function removeLiquiditySetUp(
+        uint256 _amountTokenADesired,
+        uint256 _amountTokenBDesired,
         uint256 _amountTokenAMinDeposit,
         uint256 _amountTokenBMinDeposit,
-        uint256 _deadlineDeposit,
+        uint256 _deadline,
         uint256 _liquidityBurn,
         uint256 _amountTokenAMinWithdraw,
-        uint256 _amountTokenBMinWithdraw,
-        uint256 _deadlineWithdraw
-    ) external {
-        (
-            _amountTokenADesiredDeposit,
-            _amountTokenBDesiredDeposit,
-            _amountTokenAMinDeposit,
-            _amountTokenBMinDeposit,
-            _deadlineDeposit
-        ) = s_addLiquidityTest.addLiquiditySetUp(
-            _amountTokenADesiredDeposit,
-            _amountTokenBDesiredDeposit,
-            _amountTokenAMinDeposit,
-            _amountTokenBMinDeposit,
-            _deadlineDeposit
-        );
-        s_addLiquidityTest._tokenApproval(address(s_tokenA), address(s_tokenB), s_user1.addr, address(s_router));
+        uint256 _amountTokenBMinWithdraw
+    ) private returns (uint256, uint256, uint256, uint256) {
         (uint256 _amountTokenA, uint256 _amountTokenB, uint256 _liquidity) = callAddLiquidity(
-            address(s_tokenA),
-            address(s_tokenB),
-            _amountTokenADesiredDeposit,
-            _amountTokenBDesiredDeposit,
+            _amountTokenADesired,
+            _amountTokenBDesired,
             _amountTokenAMinDeposit,
             _amountTokenBMinDeposit,
-            _deadlineDeposit,
+            _deadline,
             s_user1.addr
         );
 
-        address _pairAddress = Utils.getPairAddress(address(s_factory), address(s_tokenA), address(s_tokenB));
+        address _pairAddress = Utils.getPairAddress(address(s_factory), s_tokenA, s_tokenB);
+
         _liquidityBurn = liquidityLimitCalculation(_liquidityBurn, _liquidity);
         (_amountTokenAMinWithdraw, _amountTokenBMinWithdraw) = tokenAmountLimitCalculation(
             _liquidityBurn,
@@ -166,21 +107,53 @@ contract RemoveLiquidityTest is Test {
             _amountTokenB,
             _pairAddress
         );
-        _deadlineWithdraw = deadlineLimitCalculation(_deadlineWithdraw);
 
         vm.startPrank(s_user1.addr);
         IERC20(_pairAddress).approve(address(s_router), _liquidityBurn);
         vm.stopPrank();
+        _deadline = bound(_deadline, block.timestamp + 5, block.timestamp + 900);
+        return (_amountTokenAMinWithdraw, _amountTokenBMinWithdraw, _liquidityBurn, _deadline);
+    }
+
+    function testRemoveLiquidityTransferAmounts(
+        uint256 _amountTokenADesired,
+        uint256 _amountTokenBDesired,
+        uint256 _amountTokenAMinDeposit,
+        uint256 _amountTokenBMinDeposit,
+        uint256 _deadline,
+        uint256 _liquidityBurn,
+        uint256 _amountTokenAMinWithdraw,
+        uint256 _amountTokenBMinWithdraw
+    ) external {
+        (uint256 _amountTokenAMinWithdraw, uint256 _amountTokenBMinWithdraw, uint256 _liquidityBurn, uint256 _deadline)
+        = removeLiquiditySetUp(
+            _amountTokenADesired,
+            _amountTokenBDesired,
+            _amountTokenAMinDeposit,
+            _amountTokenBMinDeposit,
+            _deadline,
+            _liquidityBurn,
+            _amountTokenAMinWithdraw,
+            _amountTokenBMinWithdraw
+        );
+
+        (uint256 _reserveA, uint256 _reserveB) = Utils.getReserves(address(s_factory), s_tokenA, s_tokenB);
+
         vm.startPrank(s_user1.addr);
         (uint256 _withdrawnTokenA, uint256 _withdrawnTokenB) = s_router.removeLiquidity(
-            address(s_tokenA),
-            address(s_tokenB),
+            s_tokenA,
+            s_tokenB,
             _amountTokenAMinWithdraw,
             _amountTokenBMinWithdraw,
             _liquidityBurn,
             s_user1.addr,
-            _deadlineWithdraw
+            _deadline
         );
         vm.stopPrank();
+
+        (uint256 _reserveNewA, uint256 _reserveNewB) = Utils.getReserves(address(s_factory), s_tokenA, s_tokenB);
+
+        assertEq(_reserveNewA, _reserveA - _withdrawnTokenA);
+        assertEq(_reserveNewB, _reserveB - _withdrawnTokenB);
     }
 }

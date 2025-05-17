@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {IFactory} from "src/interfaces/IFactory.sol";
 import {Utils, Errors} from "src/libraries/Utils.sol";
 import {Pair, IPair} from "src/contracts/Pair.sol";
+import {console} from "forge-std/console.sol";
 
 /// @title The Factory Contract
 /// @notice contract to create a new token pair address from two tokens
@@ -39,6 +40,8 @@ contract Factory is IFactory {
         s_tokenPairAddress[_token0][_token1] = _pairAddress;
         s_tokenPairAddress[_token1][_token0] = _pairAddress;
         s_allPairAddresses.push(_pairAddress);
+        console.log("factory tokens:", _token0, _token1);
+        console.log("factory pair: ", _pairAddress);
         IPair(_pairAddress).initialize(_token0, _token1);
         emit PairCreated(_token0, _token1, _pairAddress);
     }

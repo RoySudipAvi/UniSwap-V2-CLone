@@ -159,6 +159,7 @@ contract Router {
         uint256 _deadline
     ) external withinDeadline(_deadline) returns (uint256[] memory _amounts) {
         require(_amountIn > 0, Errors.InsufficientAmount());
+
         _amounts = Utils.getAmountsOut(I_FACTORY, _amountIn, _path);
         require(_amounts[_path.length - 1] >= _amountOutMin, Errors.InsufficientAmount());
 
@@ -176,6 +177,68 @@ contract Router {
         _amounts = Utils.getAmountsIn(I_FACTORY, _amountOut, _path);
         require(_amounts[0] <= _maxAmountIn, Errors.ExcessiveInputAmount());
         _path[0].safeTransferFrom(msg.sender, Utils.getPairAddress(I_FACTORY, _path[0], _path[1]), _amounts[0]);
+        _swap(_amounts, _path, _to);
+    }
+
+    function swapExactEthForTokens(uint256 _amountOutMin, address[] memory _path, address _to, uint256 _deadline)
+        external
+        payable
+        withinDeadline(_deadline)
+        returns (uint256[] memory _amounts)
+    {
+        require(_path[0] == I_WETH, Errors.InvalidAddressPath());
+        require(msg.value > 0, Errors.InsufficientAmount());
+        _amounts = Utils.getAmountsOut(I_FACTORY, msg.value, _path);
+        require(_amounts[_path.length - 1] >= _amountOutMin, Errors.InsufficientAmount());
+        IWETH(I_WETH).deposit{value: _amounts[0]}();
+        assert(IWETH(I_WETH).transfer(Utils.getPairAddress(I_FACTORY, _path[0], _path[1]), _amounts[0]));
+        _swap(_amounts, _path, _to);
+    }
+
+    function swapTokensForExactEth(
+        uint256 _maxAmountIn,
+        uint256 _amountOut,
+        address[] memory _path,
+        address _to,
+        uint256 _deadline
+    ) external withinDeadline(_deadline) returns (uint256[] memory _amounts) {
+        require(_path[_path.length - 1] == I_WETH, Errors.InvalidAddressPath());
+        _amounts = Utils.getAmountsIn(I_FACTORY, _amountOut, _path);
+        require(_amounts[0] <= _maxAmountIn, Errors.ExcessiveInputAmount());
+        _path[0].safeTransferFrom(msg.sender, Utils.getPairAddress(I_FACTORY, _path[0], _path[1]), _amounts[0]);
+        _swap(_amounts, _path, address(this));
+        IWETH(I_WETH).withdraw(_amounts[_amounts.length - 1]);
+        _to.safeTransferETH(_amounts[_amounts.length - 1]);
+    }
+
+    function swapExactTokensForEth(
+        uint256 _amountIn,
+        uint256 _amountOutMin,
+        address[] memory _path,
+        address _to,
+        uint256 _deadline
+    ) external withinDeadline(_deadline) returns (uint256[] memory _amounts) {
+        require(_amountIn > 0, Errors.InsufficientAmount());
+        _amounts = Utils.getAmountsOut(I_FACTORY, _amountIn, _path);
+        require(_amounts[_path.length - 1] >= _amountOutMin, Errors.InsufficientAmount());
+        _path[0].safeTransferFrom(msg.sender, Utils.getPairAddress(I_FACTORY, _path[0], _path[1]), _amounts[0]);
+        _swap(_amounts, _path, address(this));
+        IWETH(I_WETH).withdraw(_amounts[_amounts.length - 1]);
+        _to.safeTransferETH(_amounts[_amounts.length - 1]);
+    }
+
+    function swapEthForExactTokens(uint256 _amountOut, address[] memory _path, address _to, uint256 _deadline)
+        external
+        payable
+        withinDeadline(_deadline)
+        returns (uint256[] memory _amounts)
+    {
+        require(_path[0] == I_WETH, Errors.InvalidAddressPath());
+        require(msg.value > 0, Errors.InsufficientAmount());
+        _amounts = Utils.getAmountsIn(I_FACTORY, _amountOut, _path);
+        require(msg.value >= _amount[0], Errors.ExcessiveInputAmount());
+        IWETH(I_WETH).deposit{value: _amounts[0]}();
+        assert(IWETH(I_WETH).transfer(Utils.getPairAddress(I_FACTORY, _path[0], _path[1]), _amounts[0]));
         _swap(_amounts, _path, _to);
     }
 
